@@ -1,0 +1,7 @@
+
+> server@1.0.0 start
+> node index.js
+
+◇ injected env (6) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+Server running on 5000
+Mongo connected
