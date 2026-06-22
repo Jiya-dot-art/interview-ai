@@ -15,7 +15,7 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const res = await api.post("/auth/register", formData);
+      const res = await api.post("api/auth/register", formData);
       const { token, refreshToken, user } = res.data;
       setAuth(token, refreshToken, user);
       navigate("/dashboard");

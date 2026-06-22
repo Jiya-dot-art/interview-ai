@@ -55,7 +55,11 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/report", reportRoutes);
 app.use("/api/admin", protect, adminRoutes);
-
+app.get("/", (req,res)=>{
+  res.json({
+    message:"Interview AI Backend Running 🚀"
+  });
+});
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: "Route not found" });
