@@ -1,7 +1,15 @@
 import Interview from "../models/Interview.js";
-import User, { FREE_INTERVIEW_LIMIT } from "../models/user.js";
-import { generateQuestion, evaluateAnswer, generateFinalReport } from "../config/groq.js";
+import User from "../models/user.js";
+import {
+  generateQuestion,
+  evaluateAnswer,
+  generateFinalReport,
+} from "../config/groq.js";
 
+/* ================= CONFIG ================= */
+const FREE_INTERVIEW_LIMIT = 3;
+
+/* ================= START INTERVIEW ================= */
 export const startInterview = async (req, res) => {
   try {
     const {
@@ -15,11 +23,16 @@ export const startInterview = async (req, res) => {
       return res.status(400).json({ message: "Role is required" });
     }
 
-    // Check if user has available interviews
     const user = await User.findById(req.user.id);
-    if (!user.isPremium && user.interviewsUsed >= user.maxInterviews) {
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // FREE LIMIT CHECK
+    if (!user.isPremium && user.interviewsUsed >= FREE_INTERVIEW_LIMIT) {
       return res.status(403).json({
-        message: "Free interview limit reached. Upgrade to Pro for unlimited practice.",
+        message: "Free interview limit reached",
         code: "UPGRADE_REQUIRED",
       });
     }
@@ -33,6 +46,7 @@ export const startInterview = async (req, res) => {
       qa: [],
     });
 
+    // AI FIRST QUESTION
     const firstQuestion = await generateQuestion({
       role,
       roundType,
@@ -42,7 +56,7 @@ export const startInterview = async (req, res) => {
     });
 
     await User.findByIdAndUpdate(req.user.id, {
-      $inc: { interviewsUsed: 1, interviewCount: 1 },
+      $inc: { interviewsUsed: 1 },
     });
 
     return res.json({
@@ -53,10 +67,13 @@ export const startInterview = async (req, res) => {
     });
   } catch (err) {
     console.error("Start interview error:", err);
-    return res.status(500).json({ message: err.message || "Failed to start interview" });
+    return res.status(500).json({
+      message: err.message || "Failed to start interview",
+    });
   }
 };
 
+/* ================= NEXT QUESTION ================= */
 export const nextQuestion = async (req, res) => {
   try {
     const { interviewId, question, answer, round } = req.body;
@@ -72,37 +89,31 @@ export const nextQuestion = async (req, res) => {
     }
 
     if (String(interview.userId) !== req.user.id) {
-      return res.status(403).json({ message: "Not allowed" });
+      return res.status(403).json({ message: "Unauthorized" });
     }
 
-    // Evaluate the answer if provided
+    /* ================= SAVE Q/A + EVALUATION ================= */
     let evaluation = null;
-    if (question && answer) {
+
+    if (answer) {
       try {
         evaluation = await evaluateAnswer(question, answer);
-        
-        // Save Q&A with evaluation
-        interview.qa.push({
-          question,
-          answer,
-          feedback: evaluation.feedback,
-          score: evaluation.score,
-          improvement: evaluation.improvement,
-        });
-      } catch (evalError) {
-        console.error("Evaluation error:", evalError);
-        // Continue without evaluation
-        interview.qa.push({ question, answer });
+      } catch (err) {
+        console.log("AI evaluation failed:", err.message);
       }
-    } else if (question) {
-      interview.qa.push({ question });
+
+      interview.qa.push({
+        question,
+        answer,
+        feedback: evaluation?.feedback || "No feedback",
+        score: evaluation?.score || 5,
+      });
     }
 
     await interview.save();
 
-    // Check if interview is complete
+    /* ================= FINAL ROUND ================= */
     if (round >= 5) {
-      // Generate final report
       try {
         const report = await generateFinalReport({
           role: interview.role,
@@ -111,15 +122,10 @@ export const nextQuestion = async (req, res) => {
           qa: interview.qa,
         });
 
-        // Update interview with final scores
         interview.finalScore = report.totalScore;
-        interview.technicalScore = report.technicalScore;
-        interview.communicationScore = report.communicationScore;
-        interview.problemSolvingScore = report.problemSolvingScore;
         interview.strengths = report.strengths;
         interview.weaknesses = report.weaknesses;
-        interview.improvementTopics = report.improvementTopics;
-        interview.studyPlan = report.studyPlan;
+
         await interview.save();
 
         return res.json({
@@ -127,8 +133,9 @@ export const nextQuestion = async (req, res) => {
           message: "Interview completed",
           interviewId: interview._id,
         });
-      } catch (reportError) {
-        console.error("Report generation error:", reportError);
+      } catch (err) {
+        console.log("Report error:", err.message);
+
         return res.json({
           finished: true,
           message: "Interview completed",
@@ -137,6 +144,7 @@ export const nextQuestion = async (req, res) => {
       }
     }
 
+    /* ================= NEXT AI QUESTION ================= */
     const nextQ = await generateQuestion({
       role: interview.role,
       roundType: interview.roundType,
@@ -152,10 +160,13 @@ export const nextQuestion = async (req, res) => {
     });
   } catch (err) {
     console.error("Next question error:", err);
-    return res.status(500).json({ message: err.message || "Failed to get next question" });
+    return res.status(500).json({
+      message: err.message || "Failed to get next question",
+    });
   }
 };
 
+/* ================= GET ALL INTERVIEWS ================= */
 export const getInterviews = async (req, res) => {
   try {
     const interviews = await Interview.find({
@@ -164,17 +175,17 @@ export const getInterviews = async (req, res) => {
 
     return res.json(interviews);
   } catch (err) {
-    console.error("Get interviews error:", err);
-    return res.status(500).json({ message: err.message || "Failed to fetch interviews" });
+    return res.status(500).json({
+      message: err.message || "Failed to fetch interviews",
+    });
   }
 };
 
+/* ================= GET SINGLE INTERVIEW ================= */
 export const getInterviewDetails = async (req, res) => {
   try {
-    const { interviewId } = req.params;
-
     const interview = await Interview.findOne({
-      _id: interviewId,
+      _id: req.params.interviewId,
       userId: req.user.id,
     });
 
@@ -184,17 +195,17 @@ export const getInterviewDetails = async (req, res) => {
 
     return res.json({ interview });
   } catch (err) {
-    console.error("Get interview details error:", err);
-    return res.status(500).json({ message: err.message || "Failed to fetch interview details" });
+    return res.status(500).json({
+      message: err.message || "Failed to fetch interview",
+    });
   }
 };
 
+/* ================= DELETE INTERVIEW ================= */
 export const deleteInterview = async (req, res) => {
   try {
-    const { interviewId } = req.params;
-
     const interview = await Interview.findOneAndDelete({
-      _id: interviewId,
+      _id: req.params.interviewId,
       userId: req.user.id,
     });
 
@@ -202,9 +213,73 @@ export const deleteInterview = async (req, res) => {
       return res.status(404).json({ message: "Interview not found" });
     }
 
-    return res.json({ message: "Interview deleted successfully" });
+    return res.json({ message: "Deleted successfully" });
   } catch (err) {
-    console.error("Delete interview error:", err);
-    return res.status(500).json({ message: err.message || "Failed to delete interview" });
+    return res.status(500).json({
+      message: err.message || "Failed to delete interview",
+    });
+  }
+};
+
+/* ================= ANALYTICS (DASHBOARD) ================= */
+export const getAnalytics = async (req, res) => {
+  try {
+    const interviews = await Interview.find({
+      userId: req.user.id,
+    });
+
+    const totalInterviews = interviews.length;
+
+    if (totalInterviews === 0) {
+      return res.json({
+        totalInterviews: 0,
+        avgScore: 0,
+        bestScore: 0,
+        lastScore: 0,
+        trend: [],
+      });
+    }
+
+    let totalScore = 0;
+    let bestScore = 0;
+
+    const trend = interviews.map((interview, index) => {
+      const qa = interview.qa || [];
+
+      const avg =
+        qa.length > 0
+          ? qa.reduce((sum, q) => sum + (q.score || 0), 0) / qa.length
+          : 0;
+
+      totalScore += avg;
+      if (avg > bestScore) bestScore = avg;
+
+      return {
+        interview: index + 1,
+        score: Math.round(avg),
+      };
+    });
+
+    const avgScore = totalScore / totalInterviews;
+
+    const lastInterview = interviews[interviews.length - 1];
+    const lastScore =
+      lastInterview?.qa?.length > 0
+        ? lastInterview.qa.reduce((a, b) => a + (b.score || 0), 0) /
+          lastInterview.qa.length
+        : 0;
+
+    return res.json({
+      totalInterviews,
+      avgScore: Math.round(avgScore * 10) / 10,
+      bestScore: Math.round(bestScore),
+      lastScore: Math.round(lastScore),
+      trend,
+    });
+  } catch (err) {
+    console.error("Analytics error:", err);
+    return res.status(500).json({
+      message: "Failed to fetch analytics",
+    });
   }
 };

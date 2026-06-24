@@ -6,8 +6,10 @@ import {
   nextQuestion,
   startInterview,
   deleteInterview,
+  getAnalytics,
 } from "../controllers/interviewcontrollers.js";
 import { checkInterviewLimit } from "../middleware/limitMiddleware.js";
+
 
 const router = express.Router();
 
@@ -16,5 +18,6 @@ router.post("/next", protect, nextQuestion);
 router.get("/history", protect, getInterviews);
 router.get("/:interviewId", protect, getInterviewDetails);
 router.delete("/:interviewId", protect, deleteInterview);
+router.get("/analytics", protect ,  getAnalytics);
 
 export default router;
