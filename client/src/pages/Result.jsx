@@ -19,7 +19,7 @@ export default function Result() {
 
   const fetchReport = async () => {
     try {
-      const res = await api.get(`/report/${interviewId}`);
+      const res = await api.get(`/api/interview/${interviewId}`);
       setReport(res.data);
     } catch (err) {
       console.error("Failed to fetch report:", err);
