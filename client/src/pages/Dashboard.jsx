@@ -16,8 +16,8 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const [analyticsRes, interviewsRes] = await Promise.all([
-        api.get("/user/analytics"),
-        api.get("/user/interviews"),
+        api.get("api/user/analytics"),
+        api.get("api/user/interviews"),
       ]);
       setAnalytics(analyticsRes.data);
       setInterviews(interviewsRes.data.interviews || []);
