@@ -5,9 +5,24 @@ import User from "../models/user.js";
 const JWT_EXPIRY = "7d";
 const JWT_REFRESH_EXPIRY = "30d";
 
-const getJwtSecret = () => process.env.JWT_SECRET;
-const getJwtRefreshSecret = () => process.env.JWT_REFRESH_SECRET;
+/**
+ * SAFE ENV GETTERS (IMPORTANT FIX)
+ */
+const getJwtSecret = () => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is missing in environment variables");
+  }
+  return process.env.JWT_SECRET;
+};
 
+const getJwtRefreshSecret = () => {
+  if (!process.env.JWT_REFRESH_SECRET) {
+    throw new Error("JWT_REFRESH_SECRET is missing in environment variables");
+  }
+  return process.env.JWT_REFRESH_SECRET;
+};
+
+/* ================= REGISTER ================= */
 export const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -23,7 +38,7 @@ export const register = async (req, res) => {
     const existingUser = await User.findOne({ email });
 
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists with this email" });
+      return res.status(400).json({ message: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -52,47 +67,38 @@ export const register = async (req, res) => {
       message: "User registered successfully",
       token: accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        isPremium: user.isPremium,
-        subscriptionPlan: user.subscriptionPlan,
-        interviewsUsed: user.interviewsUsed,
-        maxInterviews: user.maxInterviews,
-      },
+      user,
     });
+
   } catch (err) {
-    console.error("Register error:", err);
-    return res.status(500).json({
-      message: "Registration failed. Please try again.",
-      ...(process.env.NODE_ENV === "development" && { error: err.message, stack: err.stack }),
-    });
+    console.error("Register error:", err.message);
+    return res.status(500).json({ message: err.message });
   }
 };
 
+/* ================= LOGIN ================= */
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required" });
+      return res.status(400).json({ message: "Email and password required" });
     }
 
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     if (user.isBlocked) {
-      return res.status(403).json({ message: "Account blocked. Contact support." });
+      return res.status(403).json({ message: "Account blocked" });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const accessToken = jwt.sign(
@@ -112,23 +118,16 @@ export const login = async (req, res) => {
     return res.json({
       token: accessToken,
       refreshToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        isPremium: user.isPremium,
-        subscriptionPlan: user.subscriptionPlan,
-        subscriptionEnd: user.subscriptionEnd,
-        interviewsUsed: user.interviewsUsed,
-        maxInterviews: user.maxInterviews,
-      },
+      user,
     });
+
   } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({ message: "Login failed. Please try again." });
+    console.error("Login error:", err.message);
+    return res.status(500).json({ message: "Login failed" });
   }
 };
 
+/* ================= REFRESH TOKEN ================= */
 export const refreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -163,12 +162,14 @@ export const refreshToken = async (req, res) => {
       token: newAccessToken,
       refreshToken: newRefreshToken,
     });
+
   } catch (err) {
-    console.error("Refresh token error:", err);
-    return res.status(401).json({ message: "Invalid or expired refresh token" });
+    console.error("Refresh error:", err.message);
+    return res.status(401).json({ message: "Invalid refresh token" });
   }
 };
 
+/* ================= LOGOUT ================= */
 export const logout = async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -178,8 +179,9 @@ export const logout = async (req, res) => {
     }
 
     return res.json({ message: "Logged out successfully" });
+
   } catch (err) {
-    console.error("Logout error:", err);
+    console.error("Logout error:", err.message);
     return res.status(500).json({ message: "Logout failed" });
   }
 };
